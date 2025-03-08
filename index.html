@@ -11,10 +11,15 @@
     html, body {
       margin: 0;
       padding: 0;
-      overflow: hidden;
       background: #222;
       font-family: Arial, sans-serif;
       height: 100%;
+      /* Отключаем жесты и выделение во всём документе */
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      overscroll-behavior: contain; /* Чтобы не было "проскальзывания" на Android */
     }
     #startScreen, #gameOverScreen {
       position: absolute;
@@ -27,7 +32,7 @@
       align-items: center;
       justify-content: center;
       background: rgba(0, 0, 0, 0.7);
-      z-index: 2;
+      z-index: 9999; /* Поверх всего */
     }
     button {
       padding: 10px 20px;
@@ -38,16 +43,8 @@
     canvas {
       display: block;
       background: #70c5ce;
-      /* Отключаем жесты браузера */
-      touch-action: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-    }
-    /* То же самое для стартового экрана */
-    #startScreen {
-      touch-action: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
+      width: 100%;  /* Растянем по ширине, высота установится скриптом */
+      height: 100%;
     }
   </style>
 </head>
@@ -77,22 +74,22 @@
     const scoreSound = document.getElementById("scoreSound");
     const hitSound = document.getElementById("hitSound");
 
-    // Масштабирование canvas с учётом devicePixelRatio (для retina-устройств)
+    // Масштабирование canvas, учитывая devicePixelRatio (ретина/hi-dpi)
     function resizeCanvas() {
       const dpr = window.devicePixelRatio || 1;
-      const rectWidth = window.innerWidth;
-      const rectHeight = window.innerHeight;
-      canvas.width = rectWidth * dpr;
-      canvas.height = rectHeight * dpr;
-      canvas.style.width = rectWidth + "px";
-      canvas.style.height = rectHeight + "px";
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
     }
     window.addEventListener("resize", resizeCanvas);
     resizeCanvas();
 
-    // Загрузка изображений (bird.png, pipeBody.png, pipeCap.png должны лежать рядом)
+    // Изображения труб и птицы
     const birdImage = new Image();
     birdImage.src = "bird.png";
     const pipeBodyImage = new Image();
@@ -102,8 +99,8 @@
 
     // Глобальные переменные игры
     let bird, pipes, score, gameOver, speed, groundX;
-    const gravity = 0.5;
     let gameStarted = false;
+    const gravity = 0.5;
     const birdSize = 50;
     const pipeWidth = 50;
     const pipeGapMin = 120;
@@ -112,7 +109,7 @@
     const minPipeDistance = 120;
     const pipeDistanceFactor = 2;
     const groundHeight = 30;
-    const capHeight = 20; // Фиксированная высота "колпачка" трубы
+    const capHeight = 20; // высота кончика трубы
 
     function getCurrentPipeDistance() {
       return Math.max(minPipeDistance, initialPipeDistance - score * pipeDistanceFactor);
@@ -155,6 +152,7 @@
           score++;
           pipe.passed = true;
           if (scoreSound.play) scoreSound.play();
+          // каждые 5 очков усложняем
           if (score % 5 === 0) speed += 0.5;
         }
         if (
@@ -181,16 +179,16 @@
     function draw() {
       const screenWidth = window.innerWidth;
       const screenHeight = window.innerHeight;
-      // Фон с градиентом
+      // Фон
       const gradient = ctx.createLinearGradient(0, 0, 0, screenHeight);
       gradient.addColorStop(0, "#70c5ce");
       gradient.addColorStop(1, "#fff");
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, screenWidth, screenHeight);
 
-      // Трубы (верхняя перевернутая и нижняя)
+      // Трубы
       for (let pipe of pipes) {
-        // Верхняя
+        // Верхняя труба (перевёрнутая)
         ctx.save();
         ctx.translate(pipe.x, pipe.topHeight);
         ctx.scale(1, -1);
@@ -198,7 +196,7 @@
         ctx.drawImage(pipeBodyImage, 0, capHeight, pipeWidth, pipe.topHeight - capHeight);
         ctx.restore();
 
-        // Нижняя
+        // Нижняя труба
         ctx.save();
         ctx.translate(pipe.x, pipe.topHeight + pipe.gap);
         ctx.drawImage(pipeCapImage, 0, 0, pipeWidth, capHeight);
@@ -250,10 +248,11 @@
       gameLoop();
     }
 
-    // Обработчик «взмаха»
+    // "Взмах"
     function flap(e) {
       if (e && e.preventDefault) {
         e.preventDefault();
+        e.stopPropagation();
       }
       if (!gameStarted) {
         startGame();
@@ -268,21 +267,32 @@
     }
 
     /*
-      Поддержка и кликов, и жестов:
-      - iOS часто срабатывает на touchend
-      - Android – на touchstart
-      - click для десктопов
+      Навешиваем все возможные события на:
+      - документ, чтобы перехватывать в любом месте (в WebView Telegram иногда canvas не "виден")
+      - canvas, если вдруг документ перехватывает не всё
+      - startScreen, чтобы сразу начинать игру
     */
 
-    // Стартовый экран
+    // DOCUMENT – для Android/Telegram, где canvas может быть "прозрачным"
+    document.addEventListener("touchstart", flap, { passive: false });
+    document.addEventListener("touchend", flap, { passive: false });
+    document.addEventListener("click", flap, { passive: false });
+    document.addEventListener("pointerdown", flap, { passive: false });
+    document.addEventListener("pointerup", flap, { passive: false });
+
+    // START SCREEN
     startScreen.addEventListener("touchstart", flap, { passive: false });
     startScreen.addEventListener("touchend", flap, { passive: false });
     startScreen.addEventListener("click", flap, { passive: false });
+    startScreen.addEventListener("pointerdown", flap, { passive: false });
+    startScreen.addEventListener("pointerup", flap, { passive: false });
 
-    // Полотно (canvas)
+    // CANVAS
     canvas.addEventListener("touchstart", flap, { passive: false });
     canvas.addEventListener("touchend", flap, { passive: false });
     canvas.addEventListener("click", flap, { passive: false });
+    canvas.addEventListener("pointerdown", flap, { passive: false });
+    canvas.addEventListener("pointerup", flap, { passive: false });
 
     // Клавиатура
     document.addEventListener("keydown", flap);
