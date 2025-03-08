@@ -43,7 +43,7 @@
 </head>
 <body>
   <div id="startScreen">
-    <h1>Нажмите любую кнопку или коснитесь экрана для старта</h1>
+    <h1>Нажмите или коснитесь экрана для старта</h1>
   </div>
   <div id="gameOverScreen" style="display: none;">
     <h1>Игра окончена!</h1>
@@ -82,7 +82,7 @@
     window.addEventListener("resize", resizeCanvas);
     resizeCanvas();
 
-    // Загрузка изображений (файлы bird.png, pipeBody.png и pipeCap.png должны лежать в одной папке с index.html)
+    // Загрузка изображений (файлы bird.png, pipeBody.png и pipeCap.png должны быть в одной папке с index.html)
     const birdImage = new Image();
     birdImage.src = "bird.png";
     const pipeBodyImage = new Image();
@@ -227,6 +227,7 @@
     }
 
     function startGame() {
+      // Скрываем стартовый экран
       startScreen.style.display = "none";
       gameOverScreen.style.display = "none";
       gameStarted = true;
@@ -240,7 +241,7 @@
       gameLoop();
     }
 
-    // Универсальный обработчик «взмаха» – запускает игру или сбрасывает скорость птицы
+    // Универсальный обработчик, привязанный к элементам, которые точно получают касания/нажатия
     function flap(e) {
       if(e && e.preventDefault) {
         e.preventDefault();
@@ -257,22 +258,16 @@
       }
     }
 
-    // Обработчики событий для различных типов взаимодействия
-    document.addEventListener("pointerdown", function(e) {
-      e.preventDefault();
-      flap(e);
-    }, {passive: false});
+    // При старте игры на старотовом экране и canvas – навесим обработчики
+    startScreen.addEventListener("pointerdown", flap, {passive: false});
+    startScreen.addEventListener("touchstart", flap, {passive: false});
+    startScreen.addEventListener("click", flap, {passive: false});
 
-    document.addEventListener("touchstart", function(e) {
-      e.preventDefault();
-      flap(e);
-    }, {passive: false});
+    canvas.addEventListener("pointerdown", flap, {passive: false});
+    canvas.addEventListener("touchstart", flap, {passive: false});
+    canvas.addEventListener("click", flap, {passive: false});
 
-    document.addEventListener("click", function(e) {
-      e.preventDefault();
-      flap(e);
-    }, {passive: false});
-
+    // Клавиатурные события
     document.addEventListener("keydown", flap);
   </script>
 </body>
