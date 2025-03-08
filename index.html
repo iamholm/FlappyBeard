@@ -38,6 +38,16 @@
     canvas {
       display: block;
       background: #70c5ce;
+      /* Отключаем жесты браузера */
+      touch-action: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+    /* То же самое для стартового экрана */
+    #startScreen {
+      touch-action: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
   </style>
 </head>
@@ -82,7 +92,7 @@
     window.addEventListener("resize", resizeCanvas);
     resizeCanvas();
 
-    // Загрузка изображений (файлы bird.png, pipeBody.png и pipeCap.png должны быть в одной папке с index.html)
+    // Загрузка изображений (bird.png, pipeBody.png, pipeCap.png должны лежать рядом)
     const birdImage = new Image();
     birdImage.src = "bird.png";
     const pipeBodyImage = new Image();
@@ -102,7 +112,7 @@
     const minPipeDistance = 120;
     const pipeDistanceFactor = 2;
     const groundHeight = 30;
-    const capHeight = 20; // Фиксированная высота кончика трубы
+    const capHeight = 20; // Фиксированная высота "колпачка" трубы
 
     function getCurrentPipeDistance() {
       return Math.max(minPipeDistance, initialPipeDistance - score * pipeDistanceFactor);
@@ -144,7 +154,7 @@
         if (!pipe.passed && pipe.x + pipeWidth < bird.x) {
           score++;
           pipe.passed = true;
-          if (typeof scoreSound.play === "function") scoreSound.play();
+          if (scoreSound.play) scoreSound.play();
           if (score % 5 === 0) speed += 0.5;
         }
         if (
@@ -178,9 +188,9 @@
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, screenWidth, screenHeight);
 
-      // Рисуем трубы (верхняя и нижняя) с разделением на две картинки
-      pipes.forEach(pipe => {
-        // Верхняя труба (перевернутая)
+      // Трубы (верхняя перевернутая и нижняя)
+      for (let pipe of pipes) {
+        // Верхняя
         ctx.save();
         ctx.translate(pipe.x, pipe.topHeight);
         ctx.scale(1, -1);
@@ -188,15 +198,15 @@
         ctx.drawImage(pipeBodyImage, 0, capHeight, pipeWidth, pipe.topHeight - capHeight);
         ctx.restore();
 
-        // Нижняя труба
+        // Нижняя
         ctx.save();
         ctx.translate(pipe.x, pipe.topHeight + pipe.gap);
         ctx.drawImage(pipeCapImage, 0, 0, pipeWidth, capHeight);
         ctx.drawImage(pipeBodyImage, 0, capHeight, pipeWidth, screenHeight - (pipe.topHeight + pipe.gap) - groundHeight - capHeight);
         ctx.restore();
-      });
+      }
 
-      // Рисуем птицу
+      // Птица
       ctx.drawImage(birdImage, bird.x, bird.y, birdSize, birdSize);
 
       // Счёт
@@ -221,13 +231,12 @@
 
     function endGame() {
       gameOver = true;
-      if (typeof hitSound.play === "function") hitSound.play();
+      if (hitSound.play) hitSound.play();
       finalScoreElem.innerText = score;
       gameOverScreen.style.display = "flex";
     }
 
     function startGame() {
-      // Скрываем стартовый экран
       startScreen.style.display = "none";
       gameOverScreen.style.display = "none";
       gameStarted = true;
@@ -241,9 +250,9 @@
       gameLoop();
     }
 
-    // Универсальный обработчик, привязанный к элементам, которые точно получают касания/нажатия
+    // Обработчик «взмаха»
     function flap(e) {
-      if(e && e.preventDefault) {
+      if (e && e.preventDefault) {
         e.preventDefault();
       }
       if (!gameStarted) {
@@ -251,23 +260,31 @@
       }
       if (!gameOver) {
         bird.velocity = -7;
-        if (typeof flapSound.play === "function") {
+        if (flapSound.play) {
           flapSound.currentTime = 0;
           flapSound.play();
         }
       }
     }
 
-    // При старте игры на старотовом экране и canvas – навесим обработчики
-    startScreen.addEventListener("pointerdown", flap, {passive: false});
-    startScreen.addEventListener("touchstart", flap, {passive: false});
-    startScreen.addEventListener("click", flap, {passive: false});
+    /*
+      Поддержка и кликов, и жестов:
+      - iOS часто срабатывает на touchend
+      - Android – на touchstart
+      - click для десктопов
+    */
 
-    canvas.addEventListener("pointerdown", flap, {passive: false});
-    canvas.addEventListener("touchstart", flap, {passive: false});
-    canvas.addEventListener("click", flap, {passive: false});
+    // Стартовый экран
+    startScreen.addEventListener("touchstart", flap, { passive: false });
+    startScreen.addEventListener("touchend", flap, { passive: false });
+    startScreen.addEventListener("click", flap, { passive: false });
 
-    // Клавиатурные события
+    // Полотно (canvas)
+    canvas.addEventListener("touchstart", flap, { passive: false });
+    canvas.addEventListener("touchend", flap, { passive: false });
+    canvas.addEventListener("click", flap, { passive: false });
+
+    // Клавиатура
     document.addEventListener("keydown", flap);
   </script>
 </body>
