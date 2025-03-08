@@ -2,344 +2,484 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Flappy Bird – Без привязки к FPS</title>
+  <title>Flappy Beard</title>
   <style>
-    html, body {
+    body {
       margin: 0;
-      padding: 0;
       background: #222;
-      font-family: Arial, sans-serif;
-      height: 100%;
-      /* Отключаем жесты на мобильных */
-      touch-action: none;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      overscroll-behavior: contain;
-    }
-    #startScreen, #gameOverScreen {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0, 0, 0, 0.7);
-      z-index: 9999;
-    }
-    button {
-      padding: 10px 20px;
-      font-size: 18px;
-      cursor: pointer;
-      margin-top: 20px;
     }
     canvas {
       display: block;
+      margin: 0 auto;
       background: #70c5ce;
-      touch-action: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
     }
   </style>
 </head>
 <body>
-  <div id="startScreen">
-    <h1>Нажмите или коснитесь экрана для старта</h1>
-  </div>
-  <div id="gameOverScreen" style="display: none;">
-    <h1>Игра окончена!</h1>
-    <p>Ваш счёт: <span id="finalScore">0</span></p>
-    <button onclick="event.stopPropagation(); restartGame();">Начать заново</button>
-  </div>
-  <canvas id="gameCanvas"></canvas>
+<canvas id="canvas" width="400" height="600" tabindex="1"></canvas>
+<script>
+/*
+  Переработанная версия кода из вопроса,
+  с использованием requestAnimationFrame и delta time.
+*/
 
-  <!-- Звуки -->
-  <audio id="flapSound" src="sounds/flap.wav" preload="auto"></audio>
-  <audio id="scoreSound" src="sounds/score.wav" preload="auto"></audio>
-  <audio id="hitSound" src="sounds/hit.wav" preload="auto"></audio>
+/** Константы и глобальные переменные **/
+const RAD = Math.PI / 180;
+const scrn = document.getElementById("canvas");
+const sctx = scrn.getContext("2d");
 
-  <script>
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
+// Вместо frames++ используем requestAnimationFrame
+let lastTimestamp = 0;    // время (в мс) предыдущего кадра
+let gameRunning = false;  // запущен ли игровой цикл
 
-    const startScreen = document.getElementById("startScreen");
-    const gameOverScreen = document.getElementById("gameOverScreen");
-    const finalScoreElem = document.getElementById("finalScore");
+// Состояния игры
+const state = {
+  curr: 0,
+  getReady: 0,
+  Play: 1,
+  gameOver: 2,
+};
 
-    // Звуки (опционально)
-    const flapSound = document.getElementById("flapSound");
-    const scoreSound = document.getElementById("scoreSound");
-    const hitSound = document.getElementById("hitSound");
+// Параметры скорости (px/s) и т.д.
+let dx = 100;  // скорость движения труб и земли (px в секунду)
 
-    // Функция для адаптивного размера canvas
-    function resizeCanvas() {
-      const dpr = window.devicePixelRatio || 1;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      canvas.style.width = w + "px";
-      canvas.style.height = h + "px";
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.scale(dpr, dpr);
+// Аудио
+const SFX = {
+  start: new Audio(),
+  flap: new Audio(),
+  score: new Audio(),
+  hit: new Audio(),
+  die: new Audio(),
+  played: false,
+};
+// Пример: SFX.start.src = "sfx/start.wav"; ... и т.д.
+
+// Фон
+const bg = {
+  sprite: new Image(),
+  x: 0,
+  y: 0,
+  draw() {
+    // Рисуем фон внизу
+    let posY = scrn.height - this.sprite.height;
+    sctx.drawImage(this.sprite, 0, posY);
+  },
+};
+
+// Земля
+const gnd = {
+  sprite: new Image(),
+  x: 0,
+  y: 0,
+  draw() {
+    this.y = scrn.height - this.sprite.height;
+    sctx.drawImage(this.sprite, this.x, this.y);
+    // Для "повтора" земли рисуем ещё одну полоску справа
+    sctx.drawImage(this.sprite, this.x + this.sprite.width, this.y);
+  },
+  update(dtSec) {
+    if (state.curr !== state.Play) return;
+    // dx (px/s) * dtSec (s) = px за прошедшее время
+    this.x -= dx * dtSec;
+    this.x %= this.sprite.width; // чтобы повторялось
+  },
+};
+
+// Трубы
+const pipe = {
+  top: { sprite: new Image() },
+  bot: { sprite: new Image() },
+  gap: 85,
+  moved: true,
+  pipes: [],
+
+  draw() {
+    for (let i = 0; i < this.pipes.length; i++) {
+      let p = this.pipes[i];
+      sctx.drawImage(this.top.sprite, p.x, p.y);
+      sctx.drawImage(
+        this.bot.sprite,
+        p.x,
+        p.y + this.top.sprite.height + this.gap
+      );
     }
-    window.addEventListener("resize", resizeCanvas);
-    resizeCanvas();
+  },
 
-    // Картинки
-    const birdImage = new Image();
-    birdImage.src = "bird.png";
-    const pipeBodyImage = new Image();
-    pipeBodyImage.src = "pipeBody.png";
-    const pipeCapImage = new Image();
-    pipeCapImage.src = "pipeCap.png";
+  update(dtSec) {
+    if (state.curr !== state.Play) return;
 
-    // Параметры игры (подбирайте под себя)
-    const BIRD_SIZE = 50;
-    const GRAVITY = 800;            // px/s^2 (пример)
-    const FLAP_POWER = 400;         // px/s «рывок» вверх
-    let pipeSpeed = 150;            // px/s скорость труб
-    let pipeSpeedIncrement = 20;    // насколько ускоряемся каждые 5 очков
-    let pipeWidth = 50;             // ширина трубы
-    let pipeGapMin = 120;
-    let pipeGapMax = 200;
-    let groundHeight = 30;
-    let capHeight = 20;             // «колпачок»
-
-    // Расстояние между трубами
-    let initialPipeDistance = 250;  // px
-    let minPipeDistance = 150;      // px
-    let pipeDistanceFactor = 3;     // насколько уменьшается расстояние с ростом очков
-
-    // Состояние игры
-    let gameStarted = false;
-    let gameOver = false;
-    let score = 0;
-
-    // Птица
-    let bird = { x: 50, y: 150, velocity: 0 };
-
-    // Трубы
-    let pipes = [];
-    let groundX = 0; // для «прокрутки» земли
-
-    // Время предыдущего кадра (миллисекунды)
-    let lastTimestamp = 0;
-
-    // Функция для расстояния между трубами
-    function getCurrentPipeDistance() {
-      // Чем больше очков, тем меньше дистанция, но не меньше minPipeDistance
-      let dist = initialPipeDistance - score * pipeDistanceFactor;
-      return Math.max(dist, minPipeDistance);
-    }
-
-    // Инициализация
-    function initGame() {
-      bird = { x: 50, y: 150, velocity: 0 };
-      pipes = [];
-      score = 0;
-      gameOver = false;
-      groundX = 0;
-      pipeSpeed = 150;        // сброс до базовой скорости
-      lastTimestamp = 0;
-    }
-
-    // Генерация новой трубы
-    function spawnPipe() {
-      const gap = Math.floor(Math.random() * (pipeGapMax - pipeGapMin + 1)) + pipeGapMin;
-      const screenHeight = window.innerHeight;
-      const maxPipeHeight = screenHeight - gap - groundHeight - 50;
-      const topHeight = Math.floor(Math.random() * (maxPipeHeight - 50 + 1)) + 50;
-
-      pipes.push({
-        x: window.innerWidth,
-        topHeight: topHeight,
-        gap: gap,
-        passed: false
+    // Каждые ~2 секунды (или сколько захотите) создаём новую трубу
+    // Раньше это было frames % 100 == 0. Теперь у нас timeBasedSpawnTimer.
+    this.spawnTimer += dtSec;
+    if (this.spawnTimer > 2) {
+      this.spawnTimer = 0;
+      this.pipes.push({
+        x: scrn.width,
+        y: -210 * Math.min(Math.random() + 1, 1.8),
       });
     }
 
-    // Логика игры (delta time в секундах!)
-    function update(dt) {
-      if (gameOver) return;
+    // Двигаем трубы влево
+    for (let p of this.pipes) {
+      p.x -= dx * dtSec; // px = скорость * время
+    }
 
-      // Птица падает
-      bird.velocity += GRAVITY * dt; // ускорение
-      bird.y += bird.velocity * dt;  // перемещение
+    // Убираем трубы, которые вышли за экран
+    if (this.pipes.length && this.pipes[0].x < -this.top.sprite.width) {
+      this.pipes.shift();
+      this.moved = true;
+    }
+  },
 
-      // Столкновение с «землёй» или «потолком»
-      if (bird.y < 0 || bird.y + BIRD_SIZE >= window.innerHeight - groundHeight) {
-        endGame();
-      }
+  // Вводим дополнительную переменную для таймера спауна
+  spawnTimer: 0,
+};
 
-      // Трубы движутся влево
-      for (let pipe of pipes) {
-        pipe.x -= pipeSpeed * dt;
+// Птица
+const bird = {
+  animations: [
+    { sprite: new Image() },
+    { sprite: new Image() },
+    { sprite: new Image() },
+    { sprite: new Image() },
+  ],
+  rotation: 0,
+  x: 50,
+  y: 100,
+  speed: 0,
+  gravity: 300,   // px/s^2 (падение)
+  thrust: 250,    // px/s (взмах)
+  frame: 0,
 
-        // Если мы пролетели трубу
-        if (!pipe.passed && pipe.x + pipeWidth < bird.x) {
-          score++;
-          pipe.passed = true;
+  // Для анимации кадров птицы
+  animTimer: 0,
+  animInterval: 0.1, // Птица переключает кадр каждые 0.1s
 
-          // Звук
-          if (scoreSound.play) scoreSound.play();
+  // Для "покачивания" в состоянии getReady
+  bobTimer: 0,
+  bobAmplitude: 5,  // Насколько колеблется
+  bobSpeed: 2,      // Скорость колебаний (Гц)
 
-          // Каждые 5 очков ускоряем движение труб
-          if (score % 5 === 0) {
-            pipeSpeed += pipeSpeedIncrement;
+  draw() {
+    let h = this.animations[this.frame].sprite.height;
+    let w = this.animations[this.frame].sprite.width;
+
+    sctx.save();
+    sctx.translate(this.x, this.y);
+    sctx.rotate(this.rotation * RAD);
+    sctx.drawImage(this.animations[this.frame].sprite, -w / 2, -h / 2);
+    sctx.restore();
+  },
+
+  update(dtSec) {
+    let r = this.animations[0].sprite.width / 2;
+
+    switch (state.curr) {
+      case state.getReady:
+        // Обновляем bobTimer, чтобы птичка покачивалась
+        this.bobTimer += dtSec;
+        // sin(2π * freq * t) – но freq можно упрощать
+        // Тут bobSpeed = 2, значит колебания 2 Гц
+        this.y = 100 + this.bobAmplitude * Math.sin(2 * Math.PI * this.bobSpeed * this.bobTimer);
+
+        // Периодически меняем кадр (как было frames%10, но теперь по времени)
+        this.animTimer += dtSec;
+        if (this.animTimer > this.animInterval) {
+          this.animTimer = 0;
+          this.frame = (this.frame + 1) % this.animations.length;
+        }
+        this.rotation = 0;
+        break;
+
+      case state.Play:
+        // Анимация полёта (быстрее, чем в getReady)
+        this.animTimer += dtSec;
+        if (this.animTimer > 0.07) {
+          this.animTimer = 0;
+          this.frame = (this.frame + 1) % this.animations.length;
+        }
+
+        // Птица двигается
+        this.y += this.speed * dtSec; // y(t) = y0 + v * dt
+        // Ускорение вниз
+        this.speed += this.gravity * dtSec;
+
+        // Поворачиваем птичку
+        this.setRotation();
+
+        // Столкновение с землёй?
+        if (this.y + r >= gnd.y) {
+          state.curr = state.gameOver;
+          SFX.hit.play();
+        }
+        // Столкование с трубами?
+        if (this.collisioned()) {
+          state.curr = state.gameOver;
+          SFX.hit.play();
+        }
+        break;
+
+      case state.gameOver:
+        this.frame = 1; // Заставим крылья замереть
+        // Птица падает, если ещё не легла на землю
+        if (this.y + r < gnd.y) {
+          this.y += this.speed * dtSec;
+          this.speed += (this.gravity * 2) * dtSec; // падает быстрее
+          this.setRotation();
+        } else {
+          // Птичка упала на землю
+          this.speed = 0;
+          this.y = gnd.y - r;
+          this.rotation = 90;
+          if (!SFX.played) {
+            SFX.die.play();
+            SFX.played = true;
           }
         }
+        break;
+    }
+  },
 
-        // Проверка столкновения
-        if (
-          bird.x + BIRD_SIZE > pipe.x &&
-          bird.x < pipe.x + pipeWidth &&
-          (bird.y < pipe.topHeight || (bird.y + BIRD_SIZE > pipe.topHeight + pipe.gap))
-        ) {
-          endGame();
+  flap() {
+    if (this.y > 0) {
+      SFX.flap.play();
+      this.speed = -this.thrust; // мгновенный рывок вверх
+    }
+  },
+
+  setRotation() {
+    // Угол зависит от скорости
+    if (this.speed < 0) {
+      // Летит вверх
+      // Например, -25° при максимальном взмахе
+      this.rotation = -25;
+    } else {
+      // Падает
+      // max 90°
+      this.rotation = Math.min(90, 90 * (this.speed / this.thrust));
+    }
+  },
+
+  collisioned() {
+    if (!pipe.pipes.length) return false;
+    let birdSprite = this.animations[0].sprite;
+    let r = birdSprite.height / 4 + birdSprite.width / 4;
+
+    let p = pipe.pipes[0]; // ближайшая труба
+    let x = p.x;
+    let y = p.y;
+
+    let roof = y + pipe.top.sprite.height;
+    let floor = roof + pipe.gap;
+    let w = pipe.top.sprite.width;
+
+    // Если правый край птицы за левым краем трубы
+    if (this.x + r >= x) {
+      // И левый край птицы левее правого края трубы
+      if (this.x + r < x + w) {
+        // Если птица выше нижней границы верхней трубы или ниже верхней границы нижней
+        if (this.y - r <= roof || this.y + r >= floor) {
+          return true;
         }
+      } else if (pipe.moved) {
+        // Пролетаем трубу: увеличиваем счёт
+        UI.score.curr++;
+        SFX.score.play();
+        pipe.moved = false;
       }
-
-      // Удаляем трубы, которые ушли за экран
-      if (pipes.length && pipes[0].x + pipeWidth < 0) {
-        pipes.shift();
-      }
-
-      // Проверка, не пора ли создавать новую трубу
-      if (!pipes.length || (window.innerWidth - pipes[pipes.length - 1].x) >= getCurrentPipeDistance()) {
-        spawnPipe();
-      }
-
-      // Прокрутка «земли»
-      groundX = (groundX - pipeSpeed * dt) % window.innerWidth;
     }
+    return false;
+  },
+};
 
-    // Отрисовка
-    function draw() {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+// UI
+const UI = {
+  getReady: { sprite: new Image() },
+  gameOver: { sprite: new Image() },
+  tap: [{ sprite: new Image() }, { sprite: new Image() }],
+  score: {
+    curr: 0,
+    best: 0,
+  },
+  x: 0,
+  y: 0,
+  tx: 0,
+  ty: 0,
+  frame: 0,
+  animTimer: 0,
 
-      // Фон
-      const gradient = ctx.createLinearGradient(0, 0, 0, h);
-      gradient.addColorStop(0, "#70c5ce");
-      gradient.addColorStop(1, "#fff");
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, w, h);
+  draw() {
+    switch (state.curr) {
+      case state.getReady:
+        // Рисуем getReady
+        this.y = (scrn.height - this.getReady.sprite.height) / 2;
+        this.x = (scrn.width - this.getReady.sprite.width) / 2;
+        sctx.drawImage(this.getReady.sprite, this.x, this.y);
 
-      // Трубы
-      for (let pipe of pipes) {
-        // Верхняя (перевёрнутая)
-        ctx.save();
-        ctx.translate(pipe.x, pipe.topHeight);
-        ctx.scale(1, -1);
-        ctx.drawImage(pipeCapImage, 0, 0, pipeWidth, capHeight);
-        ctx.drawImage(pipeBodyImage, 0, capHeight, pipeWidth, pipe.topHeight - capHeight);
-        ctx.restore();
+        // Рисуем тап
+        let tapImg = this.tap[this.frame].sprite;
+        this.tx = (scrn.width - tapImg.width) / 2;
+        this.ty = this.y + this.getReady.sprite.height - tapImg.height;
+        sctx.drawImage(tapImg, this.tx, this.ty);
+        break;
 
-        // Нижняя
-        ctx.save();
-        ctx.translate(pipe.x, pipe.topHeight + pipe.gap);
-        ctx.drawImage(pipeCapImage, 0, 0, pipeWidth, capHeight);
-        ctx.drawImage(pipeBodyImage, 0, capHeight, pipeWidth, h - (pipe.topHeight + pipe.gap) - groundHeight - capHeight);
-        ctx.restore();
-      }
+      case state.gameOver:
+        // Рисуем gameOver
+        this.y = (scrn.height - this.gameOver.sprite.height) / 2;
+        this.x = (scrn.width - this.gameOver.sprite.width) / 2;
+        sctx.drawImage(this.gameOver.sprite, this.x, this.y);
 
-      // Птица
-      ctx.drawImage(birdImage, bird.x, bird.y, BIRD_SIZE, BIRD_SIZE);
-
-      // Счёт
-      ctx.fillStyle = "#000";
-      ctx.font = "20px Arial";
-      ctx.fillText(`Счёт: ${score}`, 10, 25);
-
-      // «Земля»
-      ctx.fillStyle = "#964B00";
-      ctx.fillRect(groundX, h - groundHeight, w, groundHeight);
-      ctx.fillRect(groundX + w, h - groundHeight, w, groundHeight);
+        // Рисуем тап
+        let tapImg2 = this.tap[this.frame].sprite;
+        this.tx = (scrn.width - tapImg2.width) / 2;
+        this.ty = this.y + this.gameOver.sprite.height - tapImg2.height;
+        sctx.drawImage(tapImg2, this.tx, this.ty);
+        break;
     }
+    this.drawScore();
+  },
 
-    // Цикл с привязкой ко времени (dtSec)
-    let rafId;
-    function gameLoop(timestamp) {
-      if (!gameStarted) {
-        rafId = requestAnimationFrame(gameLoop);
-        return;
-      }
-      let dtMs = timestamp - lastTimestamp;
-      if (!lastTimestamp) dtMs = 0;
-      lastTimestamp = timestamp;
+  drawScore() {
+    sctx.fillStyle = "#FFFFFF";
+    sctx.strokeStyle = "#000000";
+    sctx.lineWidth = "2";
+    sctx.font = "35px Squada One";
 
-      // Переводим в секунды
-      const dtSec = dtMs / 1000;
-
-      if (!gameOver) {
-        update(dtSec);
-        draw();
-      }
-      rafId = requestAnimationFrame(gameLoop);
-    }
-
-    // Стартуем основной цикл
-    requestAnimationFrame(gameLoop);
-
-    // Конец игры
-    function endGame() {
-      gameOver = true;
-      if (hitSound.play) hitSound.play();
-      finalScoreElem.textContent = score;
-      gameOverScreen.style.display = "flex";
-    }
-
-    function startGame() {
-      startScreen.style.display = "none";
-      gameOverScreen.style.display = "none";
-      gameStarted = true;
-      initGame();
-    }
-
-    function restartGame() {
-      initGame();
-      gameOverScreen.style.display = "none";
-    }
-
-    // «Взмах»
-    function flap(e) {
-      if (e?.target?.tagName === "BUTTON") {
-        // Если кликнули по кнопке, ничего не делаем
-        return;
-      }
-      e?.preventDefault?.();
-      e?.stopPropagation?.();
-
-      if (!gameStarted) {
-        startGame();
-      }
-      if (!gameOver) {
-        // Подбрасываем птицу
-        bird.velocity = -FLAP_POWER;
-        if (flapSound.play) {
-          flapSound.currentTime = 0;
-          flapSound.play();
+    switch (state.curr) {
+      case state.Play:
+        sctx.fillText(this.score.curr, scrn.width / 2 - 5, 50);
+        sctx.strokeText(this.score.curr, scrn.width / 2 - 5, 50);
+        break;
+      case state.gameOver:
+        sctx.font = "40px Squada One";
+        let sc = `SCORE :     ${this.score.curr}`;
+        try {
+          this.score.best = Math.max(
+            this.score.curr,
+            localStorage.getItem("best") || 0
+          );
+          localStorage.setItem("best", this.score.best);
+          let bs = `BEST  :     ${this.score.best}`;
+          sctx.fillText(sc, scrn.width / 2 - 80, scrn.height / 2 + 0);
+          sctx.strokeText(sc, scrn.width / 2 - 80, scrn.height / 2 + 0);
+          sctx.fillText(bs, scrn.width / 2 - 80, scrn.height / 2 + 30);
+          sctx.strokeText(bs, scrn.width / 2 - 80, scrn.height / 2 + 30);
+        } catch (e) {
+          // Если localStorage недоступен
+          sctx.fillText(sc, scrn.width / 2 - 85, scrn.height / 2 + 15);
+          sctx.strokeText(sc, scrn.width / 2 - 85, scrn.height / 2 + 15);
         }
-      }
+        break;
     }
+  },
 
-    // Вешаем события на document, canvas, startScreen
-    const eventTypes = ["touchstart", "touchend", "pointerdown", "pointerup", "click"];
-    function bindEvents(elem) {
-      eventTypes.forEach(ev => elem.addEventListener(ev, flap, { passive: false }));
+  update(dtSec) {
+    if (state.curr === state.Play) return;
+
+    // Анимация TAP (крылышки)
+    this.animTimer += dtSec;
+    // Допустим, переключаем кадр каждые 0.15s
+    if (this.animTimer > 0.15) {
+      this.animTimer = 0;
+      this.frame = (this.frame + 1) % this.tap.length;
     }
+  },
+};
 
-    bindEvents(document);
-    bindEvents(canvas);
-    bindEvents(startScreen);
+// Инициализация спрайтов (пример)
+bg.sprite.src = "img/BG.png";
+gnd.sprite.src = "img/ground.png";
+pipe.top.sprite.src = "img/toppipe.png";
+pipe.bot.sprite.src = "img/botpipe.png";
+UI.gameOver.sprite.src = "img/go.png";
+UI.getReady.sprite.src = "img/getready.png";
+UI.tap[0].sprite.src = "img/tap/t0.png";
+UI.tap[1].sprite.src = "img/tap/t1.png";
+bird.animations[0].sprite.src = "img/bird/b0.png";
+bird.animations[1].sprite.src = "img/bird/b1.png";
+bird.animations[2].sprite.src = "img/bird/b2.png";
+bird.animations[3].sprite.src = "img/bird/b0.png";
 
-    // Для клавиатуры (десктоп)
-    document.addEventListener("keydown", e => {
-      if (!e.repeat) flap(e);
-    });
-  </script>
+// Пример звуков
+// SFX.start.src = "sfx/start.wav";
+// ...
+
+/** Вызов обновления и рисования с учётом времени **/
+function gameLoop(timestamp) {
+  if (!gameRunning) {
+    // Первый запуск?
+    lastTimestamp = timestamp;
+    gameRunning = true;
+  }
+  let dtMs = timestamp - lastTimestamp;
+  lastTimestamp = timestamp;
+
+  // Переводим в секунды
+  const dtSec = dtMs / 1000;
+
+  // Обновляем
+  update(dtSec);
+  // Рисуем
+  draw();
+
+  // Следующий кадр
+  requestAnimationFrame(gameLoop);
+}
+
+function update(dtSec) {
+  bird.update(dtSec);
+  gnd.update(dtSec);
+  pipe.update(dtSec);
+  UI.update(dtSec);
+}
+
+function draw() {
+  // Очищаем экран
+  sctx.fillStyle = "#30c0df";
+  sctx.fillRect(0, 0, scrn.width, scrn.height);
+
+  bg.draw();
+  pipe.draw();
+  bird.draw();
+  gnd.draw();
+  UI.draw();
+}
+
+/** Управление состояниями при клике/нажатии **/
+function onUserAction() {
+  switch (state.curr) {
+    case state.getReady:
+      state.curr = state.Play;
+      SFX.start.play();
+      break;
+    case state.Play:
+      bird.flap();
+      break;
+    case state.gameOver:
+      state.curr = state.getReady;
+      bird.speed = 0;
+      bird.y = 100;
+      pipe.pipes = [];
+      UI.score.curr = 0;
+      SFX.played = false;
+      break;
+  }
+}
+
+// Запускаем анимацию
+requestAnimationFrame(gameLoop);
+
+/** Вешаем обработчики событий на canvas **/
+scrn.addEventListener("click", () => {
+  onUserAction();
+});
+
+scrn.onkeydown = function keyDown(e) {
+  // Space Key(32) or W(87) or arrow up(38)
+  if (e.keyCode === 32 || e.keyCode === 87 || e.keyCode === 38) {
+    onUserAction();
+  }
+};
+</script>
 </body>
 </html>
