@@ -2,7 +2,9 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Flappy Beard</title>
+  <title>Flappy Beard – Без зума</title>
+  <!-- Мета-тег отключает масштабирование -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
   <style>
     html, body {
       margin: 0;
@@ -10,24 +12,31 @@
       background: #222;
       height: 100%;
       overflow: hidden; /* отключаем прокрутку */
+      /* Отключаем жесты на корневых элементах */
+      touch-action: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
-    /* Сам canvas имеет "логические" 400×600, но растягивается на весь экран */
+    /* Canvas имеет логические 400×600, но растягивается на весь экран */
     canvas {
       display: block;
       background: #70c5ce;
-      width: 100vw;   /* растянуть по ширине окна */
-      height: 100vh;  /* растянуть по высоте окна */
+      width: 100vw;    /* растянуть по ширине экрана */
+      height: 100vh;   /* растянуть по высоте экрана */
+      touch-action: none;          /* отключаем жесты */
+      -webkit-user-select: none;   /* запрет выделения */
+      -webkit-touch-callout: none; /* запрет вызова меню по долгому тапу */
     }
   </style>
 </head>
 <body>
-<!-- canvas с "виртуальным" разрешением 400x600 -->
 <canvas id="canvas" width="400" height="600"></canvas>
 <script>
 /*
   Код с использованием requestAnimationFrame и delta time.
   Логическое разрешение: 400×600.
-  Физически canvas растягивается на всё окно за счёт CSS (width:100vw; height:100vh).
+  Физически canvas растягивается на всё окно за счёт CSS.
+  Масштабирование (зум) при двойном тапе отключено.
 */
 
 /** Константы и глобальные переменные **/
@@ -37,7 +46,7 @@ const sctx = scrn.getContext("2d");
 
 // rAF
 let lastTimestamp = 0;
-let gameRunning = false;  
+let gameRunning = false;
 
 // Состояния
 const state = {
@@ -59,7 +68,7 @@ const SFX = {
   die: new Audio(),
   played: false,
 };
-// Пример путей (замените своими):
+// Укажите свои пути, если нужно:
 // SFX.start.src = "sfx/start.wav";
 // ...
 
@@ -67,7 +76,8 @@ const SFX = {
 const bg = {
   sprite: new Image(),
   draw() {
-    let posY = scrn.height - this.sprite.height; // scrn.height = 600
+    // При логической высоте 600
+    let posY = scrn.height - this.sprite.height; 
     sctx.drawImage(this.sprite, 0, posY);
   },
 };
@@ -77,7 +87,7 @@ const gnd = {
   sprite: new Image(),
   x: 0,
   draw() {
-    let groundY = scrn.height - this.sprite.height; // = 600 - height ground
+    let groundY = scrn.height - this.sprite.height;
     sctx.drawImage(this.sprite, this.x, groundY);
     sctx.drawImage(this.sprite, this.x + this.sprite.width, groundY);
   },
@@ -95,7 +105,7 @@ const pipe = {
   gap: 150,
   moved: true,
   pipes: [],
-  spawnTimer: 0, // таймер спауна
+  spawnTimer: 0,
 
   draw() {
     for (let p of this.pipes) {
@@ -110,21 +120,18 @@ const pipe = {
 
   update(dtSec) {
     if (state.curr !== state.Play) return;
-    // Каждые ~2c
     this.spawnTimer += dtSec;
     if (this.spawnTimer > 2) {
       this.spawnTimer = 0;
       // спавним новую трубу
       this.pipes.push({
-        x: scrn.width, // 400
+        x: scrn.width, 
         y: -210 * Math.min(Math.random() + 1, 1.8),
       });
     }
-
     for (let p of this.pipes) {
-      p.x -= dx * dtSec; 
+      p.x -= dx * dtSec;
     }
-
     // Убираем ушедшие за левый край
     if (this.pipes.length && this.pipes[0].x < -this.top.sprite.width) {
       this.pipes.shift();
@@ -142,11 +149,11 @@ const bird = {
     { sprite: new Image() },
   ],
   rotation: 0,
-  x: 50,
-  y: 100,
+  x: 40,
+  y: 80,
   speed: 0,
-  gravity: 400,   
-  thrust: 200,    
+  gravity: 400,
+  thrust: 200,
   frame: 0,
 
   animTimer: 0,
@@ -168,14 +175,14 @@ const bird = {
   },
 
   update(dtSec) {
-    let r = this.animations[0].sprite.width / 2; // центр птицы
+    let r = this.animations[0].sprite.width / 2;
 
     switch (state.curr) {
       case state.getReady:
         // Покачивание
         this.bobTimer += dtSec;
         this.y = 100 + this.bobAmplitude * Math.sin(2 * Math.PI * this.bobSpeed * this.bobTimer);
-        // Кадры
+        // Анимация
         this.animTimer += dtSec;
         if (this.animTimer > this.animInterval) {
           this.animTimer = 0;
@@ -185,7 +192,7 @@ const bird = {
         break;
 
       case state.Play:
-        // Кадры
+        // Анимация
         this.animTimer += dtSec;
         if (this.animTimer > 0.07) {
           this.animTimer = 0;
@@ -199,7 +206,7 @@ const bird = {
         this.setRotation();
 
         // Столкновение с землёй
-        let groundY = scrn.height - gnd.sprite.height; // 600 - ground
+        let groundY = scrn.height - gnd.sprite.height;
         if (this.y + r >= groundY) {
           state.curr = state.gameOver;
           SFX.hit.play();
@@ -258,7 +265,6 @@ const bird = {
     let floor = roof + pipe.gap;
     let w = pipe.top.sprite.width;
 
-    // Столкновение
     if (this.x + r >= x) {
       if (this.x + r < x + w) {
         if (this.y - r <= roof || this.y + r >= floor) {
@@ -361,17 +367,15 @@ const UI = {
   },
 };
 
-// Загружаем спрайты (пример)
+// Загружаем спрайты
 bg.sprite.src = "img/BG.png";
 gnd.sprite.src = "img/ground/g0.png";
 pipe.top.sprite.src = "img/toppipe.png";
 pipe.bot.sprite.src = "img/botpipe.png";
-
 UI.getReady.sprite.src = "img/getready.png";
 UI.gameOver.sprite.src = "img/go.png";
 UI.tap[0].sprite.src = "img/tap/t0.png";
 UI.tap[1].sprite.src = "img/tap/t1.png";
-
 bird.animations[0].sprite.src = "img/bird/b0.png";
 bird.animations[1].sprite.src = "img/bird/b1.png";
 bird.animations[2].sprite.src = "img/bird/b2.png";
@@ -435,10 +439,19 @@ function onUserAction() {
   }
 }
 
-/** Клики и клавиатура **/
-scrn.addEventListener("click", () => {
+/** Клики и касания, исключаем зум и прокрутку **/
+function handleTap(e) {
+  e.preventDefault?.();
   onUserAction();
-});
+}
+
+// Клик
+scrn.addEventListener("click", handleTap, { passive: false });
+
+// touchstart
+scrn.addEventListener("touchstart", handleTap, { passive: false });
+
+// Клавиатура
 document.addEventListener("keydown", (e) => {
   if (e.keyCode === 32 || e.keyCode === 87 || e.keyCode === 38) {
     onUserAction();
