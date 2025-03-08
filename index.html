@@ -2,7 +2,10 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Добавленные meta-теги для iOS -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Flappy Bird – Fullscreen</title>
   <style>
     html, body {
@@ -65,7 +68,7 @@
     const scoreSound = document.getElementById("scoreSound");
     const hitSound = document.getElementById("hitSound");
 
-    // Устанавливаем размеры canvas на весь экран
+    // Адаптивный canvas на весь экран
     function resizeCanvas() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
@@ -218,7 +221,7 @@
       gameLoop();
     }
 
-    // Запрос полноэкранного режима (для мобильных устройств)
+    // Пытаемся запросить fullscreen (работает в некоторых браузерах, но iOS Safari может игнорировать этот вызов)
     function requestFullScreen() {
       if (canvas.requestFullscreen) {
         canvas.requestFullscreen();
@@ -232,7 +235,7 @@
     function flap() {
       if (!gameStarted) {
         startGame();
-        requestFullScreen(); // Переход в полноэкранный режим при запуске игры
+        requestFullScreen();
       }
       if (!gameOver) {
         bird.velocity = -7;
@@ -247,6 +250,11 @@
     document.addEventListener("keydown", flap);
     canvas.addEventListener("click", flap);
     canvas.addEventListener("touchstart", function(e) {
+      e.preventDefault();
+      flap();
+    });
+    // Дополнительно: обработчик на document для touch, если canvas не срабатывает
+    document.addEventListener("touchstart", function(e) {
       e.preventDefault();
       flap();
     });
