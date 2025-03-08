@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flappy Bird – С заменой фигур на изображения</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #222;
+      color: white;
+      font-family: Arial, sans-serif;
+      overflow: hidden;
+      position: relative;
+    }
+    #startScreen, #gameOverScreen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 2;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 18px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+      background: #70c5ce;
+    }
+  </style>
+</head>
+<body>
+  <div id="startScreen">
+    <h1>Нажмите любую кнопку или кликните мышью для старта</h1>
+  </div>
+  <div id="gameOverScreen" style="display: none;">
+    <h1>Игра окончена!</h1>
+    <p>Ваш счёт: <span id="finalScore">0</span></p>
+    <button onclick="restartGame()">Начать заново</button>
+  </div>
+  <canvas id="gameCanvas" width="320" height="480"></canvas>
+
+  <!-- Звуковые эффекты (опционально) -->
+  <audio id="flapSound" src="sounds/flap.wav" preload="auto"></audio>
+  <audio id="scoreSound" src="sounds/score.wav" preload="auto"></audio>
+  <audio id="hitSound" src="sounds/hit.wav" preload="auto"></audio>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const startScreen = document.getElementById("startScreen");
+    const gameOverScreen = document.getElementById("gameOverScreen");
+    const finalScoreElem = document.getElementById("finalScore");
+    const flapSound = document.getElementById("flapSound");
+    const scoreSound = document.getElementById("scoreSound");
+    const hitSound = document.getElementById("hitSound");
+
+    // Загрузка изображений (файлы находятся в корне)
+    const pipeImage = new Image();
+    pipeImage.src = "pipe.png";  // если pipe.png лежит в той же папке, что и index.html
+    const birdImage = new Image();
+    birdImage.src = "bird.png";  // если bird.png лежит в той же папке, что и index.html
+
+    let bird, pipes, score, gameOver, speed, groundX;
+    const gravity = 0.5;
+    let gameStarted = false;
+    const birdSize = 50;
+    const pipeWidth = 50;
+    const pipeGapMin = 120;
+    const pipeGapMax = 200;
+    const initialPipeDistance = 200;
+    const minPipeDistance = 120;
+    const pipeDistanceFactor = 2;
+    const groundHeight = 30;
+
+    function getCurrentPipeDistance() {
+      return Math.max(minPipeDistance, initialPipeDistance - score * pipeDistanceFactor);
+    }
+
+    function initGame() {
+      bird = { x: 50, y: 150, velocity: 0 };
+      pipes = [];
+      score = 0;
+      gameOver = false;
+      speed = 2;
+      groundX = 0;
+    }
+
+    function spawnPipe() {
+      const gap = Math.floor(Math.random() * (pipeGapMax - pipeGapMin + 1)) + pipeGapMin;
+      const maxPipeHeight = canvas.height - gap - groundHeight - 50;
+      const topHeight = Math.floor(Math.random() * (maxPipeHeight - 50 + 1)) + 50;
+      pipes.push({ 
+        x: canvas.width, 
+        topHeight: topHeight, 
+        gap: gap,
+        passed: false
+      });
+    }
+
+    function update() {
+      if (gameOver) return;
+      bird.velocity += gravity;
+      bird.y += bird.velocity;
+
+      if (bird.y + birdSize > canvas.height - groundHeight || bird.y < 0) {
+        endGame();
+      }
+
+      for (let pipe of pipes) {
+        pipe.x -= speed;
+        if (!pipe.passed && pipe.x + pipeWidth < bird.x) {
+          score++;
+          pipe.passed = true;
+          if (typeof scoreSound.play === "function") scoreSound.play();
+          if (score % 5 === 0) speed += 0.5;
+        }
+        if (
+          bird.x + birdSize > pipe.x &&
+          bird.x < pipe.x + pipeWidth &&
+          (bird.y < pipe.topHeight || bird.y + birdSize > pipe.topHeight + pipe.gap)
+        ) {
+          endGame();
+        }
+      }
+
+      if (pipes.length && pipes[0].x + pipeWidth < 0) {
+        pipes.shift();
+      }
+
+      const currentPipeDistance = getCurrentPipeDistance();
+      if (pipes.length === 0 || canvas.width - pipes[pipes.length - 1].x >= currentPipeDistance) {
+        spawnPipe();
+      }
+
+      groundX = (groundX - speed) % canvas.width;
+    }
+
+    function draw() {
+      // Фон
+      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, "#70c5ce");
+      gradient.addColorStop(1, "#fff");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Отрисовка труб с изображениями
+      for (let pipe of pipes) {
+        // Верхняя труба – перевернутая картинка
+        ctx.save();
+        ctx.translate(pipe.x + pipeWidth / 2, pipe.topHeight);
+        ctx.scale(1, -1);
+        ctx.drawImage(pipeImage, -pipeWidth / 2, 0, pipeWidth, pipe.topHeight);
+        ctx.restore();
+
+        // Нижняя труба – обычное изображение
+        ctx.drawImage(pipeImage, pipe.x, pipe.topHeight + pipe.gap, pipeWidth, canvas.height - pipe.topHeight - pipe.gap - groundHeight);
+      }
+
+      // Отрисовка птицы с изображением
+      ctx.drawImage(birdImage, bird.x, bird.y, birdSize, birdSize);
+
+      // Счёт
+      ctx.fillStyle = "#000";
+      ctx.font = "20px Arial";
+      ctx.fillText(`Счёт: ${score}`, 10, 25);
+
+      // Земля
+      ctx.fillStyle = "#964B00";
+      ctx.fillRect(groundX, canvas.height - groundHeight, canvas.width, groundHeight);
+      ctx.fillRect(groundX + canvas.width, canvas.height - groundHeight, canvas.width, groundHeight);
+    }
+
+    function gameLoop() {
+      if (!gameStarted) return;
+      update();
+      draw();
+      if (!gameOver) {
+        requestAnimationFrame(gameLoop);
+      }
+    }
+
+    function endGame() {
+      gameOver = true;
+      if (typeof hitSound.play === "function") hitSound.play();
+      finalScoreElem.innerText = score;
+      gameOverScreen.style.display = "flex";
+    }
+
+    function startGame() {
+      startScreen.style.display = "none";
+      gameOverScreen.style.display = "none";
+      gameStarted = true;
+      initGame();
+      gameLoop();
+    }
+
+    function restartGame() {
+      initGame();
+      gameOverScreen.style.display = "none";
+      gameLoop();
+    }
+
+    function flap() {
+      if (!gameStarted) {
+        startGame();
+      }
+      if (!gameOver) {
+        bird.velocity = -7;
+        if (typeof flapSound.play === "function") {
+          flapSound.currentTime = 0;
+          flapSound.play();
+        }
+      }
+    }
+
+    document.addEventListener("keydown", flap);
+    canvas.addEventListener("click", flap);
+  </script>
+</body>
+</html>
