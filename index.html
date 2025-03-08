@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Flappy Bird – С заменой фигур на изображения</title>
+  <title>Flappy Bird – Fullscreen</title>
   <style>
-    body {
+    html, body {
       margin: 0;
       padding: 0;
+      overflow: hidden;
       background: #222;
       color: white;
       font-family: Arial, sans-serif;
-      overflow: hidden;
-      position: relative;
+      height: 100%;
     }
     #startScreen, #gameOverScreen {
       position: absolute;
@@ -35,23 +35,22 @@
     }
     canvas {
       display: block;
-      margin: 0 auto;
       background: #70c5ce;
     }
   </style>
 </head>
 <body>
   <div id="startScreen">
-    <h1>Нажмите любую кнопку или кликните мышью для старта</h1>
+    <h1>Нажмите любую кнопку или коснитесь экрана для старта</h1>
   </div>
   <div id="gameOverScreen" style="display: none;">
     <h1>Игра окончена!</h1>
     <p>Ваш счёт: <span id="finalScore">0</span></p>
     <button onclick="restartGame()">Начать заново</button>
   </div>
-  <canvas id="gameCanvas" width="320" height="480"></canvas>
+  <canvas id="gameCanvas"></canvas>
 
-  <!-- Звуковые эффекты (опционально) -->
+  <!-- Звуковые эффекты (файлы должны находиться в указанной папке) -->
   <audio id="flapSound" src="sounds/flap.wav" preload="auto"></audio>
   <audio id="scoreSound" src="sounds/score.wav" preload="auto"></audio>
   <audio id="hitSound" src="sounds/hit.wav" preload="auto"></audio>
@@ -66,12 +65,21 @@
     const scoreSound = document.getElementById("scoreSound");
     const hitSound = document.getElementById("hitSound");
 
-    // Загрузка изображений (файлы находятся в корне)
-    const pipeImage = new Image();
-    pipeImage.src = "pipe.png";  // если pipe.png лежит в той же папке, что и index.html
-    const birdImage = new Image();
-    birdImage.src = "bird.png";  // если bird.png лежит в той же папке, что и index.html
+    // Устанавливаем размеры canvas на весь экран
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
 
+    // Загрузка изображений (файлы bird.png и pipe.png должны находиться в корне)
+    const pipeImage = new Image();
+    pipeImage.src = "pipe.png";
+    const birdImage = new Image();
+    birdImage.src = "bird.png";
+
+    // Глобальные переменные игры
     let bird, pipes, score, gameOver, speed, groundX;
     const gravity = 0.5;
     let gameStarted = false;
@@ -148,27 +156,25 @@
     }
 
     function draw() {
-      // Фон
+      // Фон с градиентом
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
       gradient.addColorStop(0, "#70c5ce");
       gradient.addColorStop(1, "#fff");
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Отрисовка труб с изображениями
+      // Трубы: верхняя (перевернутая) и нижняя
       for (let pipe of pipes) {
-        // Верхняя труба – перевернутая картинка
         ctx.save();
         ctx.translate(pipe.x + pipeWidth / 2, pipe.topHeight);
         ctx.scale(1, -1);
         ctx.drawImage(pipeImage, -pipeWidth / 2, 0, pipeWidth, pipe.topHeight);
         ctx.restore();
 
-        // Нижняя труба – обычное изображение
         ctx.drawImage(pipeImage, pipe.x, pipe.topHeight + pipe.gap, pipeWidth, canvas.height - pipe.topHeight - pipe.gap - groundHeight);
       }
 
-      // Отрисовка птицы с изображением
+      // Птица
       ctx.drawImage(birdImage, bird.x, bird.y, birdSize, birdSize);
 
       // Счёт
@@ -212,9 +218,21 @@
       gameLoop();
     }
 
+    // Запрос полноэкранного режима (для мобильных устройств)
+    function requestFullScreen() {
+      if (canvas.requestFullscreen) {
+        canvas.requestFullscreen();
+      } else if (canvas.webkitRequestFullscreen) {
+        canvas.webkitRequestFullscreen();
+      } else if (canvas.msRequestFullscreen) {
+        canvas.msRequestFullscreen();
+      }
+    }
+
     function flap() {
       if (!gameStarted) {
         startGame();
+        requestFullScreen(); // Переход в полноэкранный режим при запуске игры
       }
       if (!gameOver) {
         bird.velocity = -7;
@@ -225,8 +243,13 @@
       }
     }
 
+    // Обработчики событий: клавиатура, клик и касание
     document.addEventListener("keydown", flap);
     canvas.addEventListener("click", flap);
+    canvas.addEventListener("touchstart", function(e) {
+      e.preventDefault();
+      flap();
+    });
   </script>
 </body>
 </html>
