@@ -2,9 +2,8 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Flappy Beard – Адаптивный и исправленный</title>
+  <title>Flappy Beard – 400x600, растяжение на весь экран</title>
   <style>
-    /* Убираем отступы, чтобы canvas мог занимать весь экран */
     html, body {
       margin: 0;
       padding: 0;
@@ -12,18 +11,23 @@
       height: 100%;
       overflow: hidden; /* отключаем прокрутку */
     }
+    /* Сам canvas имеет "логические" 400×600, но растягивается на весь экран */
     canvas {
       display: block;
       background: #70c5ce;
+      width: 100vw;   /* растянуть по ширине окна */
+      height: 100vh;  /* растянуть по высоте окна */
     }
   </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
+<!-- canvas с "виртуальным" разрешением 400x600 -->
+<canvas id="canvas" width="400" height="600"></canvas>
 <script>
 /*
-  Исправленная версия с учётом путей к ресурсам, 
-  адаптивной подстройкой canvas и обработкой клавиатуры на document
+  Код с использованием requestAnimationFrame и delta time.
+  Логическое разрешение: 400×600.
+  Физически canvas растягивается на всё окно за счёт CSS (width:100vw; height:100vh).
 */
 
 /** Константы и глобальные переменные **/
@@ -31,17 +35,9 @@ const RAD = Math.PI / 180;
 const scrn = document.getElementById("canvas");
 const sctx = scrn.getContext("2d");
 
-// Делаем canvas на весь экран
-function resizeCanvas() {
-  scrn.width = window.innerWidth;
-  scrn.height = window.innerHeight;
-}
-window.addEventListener("resize", resizeCanvas);
-resizeCanvas();
-
-// Переменные для rAF
-let lastTimestamp = 0;    // время (в мс) предыдущего кадра
-let gameRunning = false;  // запущен ли игровой цикл?
+// rAF
+let lastTimestamp = 0;
+let gameRunning = false;  
 
 // Состояния
 const state = {
@@ -51,8 +47,8 @@ const state = {
   gameOver: 2,
 };
 
-// Параметры скорости (px/s)
-let dx = 100;  // скорость движения труб и земли (px в секунду)
+// Скорость труб/земли (px/s)
+let dx = 100;
 
 // Аудио
 const SFX = {
@@ -63,18 +59,15 @@ const SFX = {
   die: new Audio(),
   played: false,
 };
-// Укажите реальные пути к вашим звукам:
-SFX.start.src = "sfx/start.wav";
-SFX.flap.src = "sfx/flap.wav";
-SFX.score.src = "sfx/score.wav";
-SFX.hit.src = "sfx/hit.wav";
-SFX.die.src = "sfx/die.wav";
+// Пример путей (замените своими):
+// SFX.start.src = "sfx/start.wav";
+// ...
 
 // Фон
 const bg = {
   sprite: new Image(),
   draw() {
-    let posY = scrn.height - this.sprite.height;
+    let posY = scrn.height - this.sprite.height; // scrn.height = 600
     sctx.drawImage(this.sprite, 0, posY);
   },
 };
@@ -83,17 +76,14 @@ const bg = {
 const gnd = {
   sprite: new Image(),
   x: 0,
-  y: 0,
   draw() {
-    this.y = scrn.height - this.sprite.height;
-    sctx.drawImage(this.sprite, this.x, this.y);
-    // Рисуем ещё раз, чтобы был непрерывный пол
-    sctx.drawImage(this.sprite, this.x + this.sprite.width, this.y);
+    let groundY = scrn.height - this.sprite.height; // = 600 - height ground
+    sctx.drawImage(this.sprite, this.x, groundY);
+    sctx.drawImage(this.sprite, this.x + this.sprite.width, groundY);
   },
   update(dtSec) {
     if (state.curr !== state.Play) return;
     this.x -= dx * dtSec;
-    // Чтобы зациклить анимацию прокрутки
     this.x %= this.sprite.width;
   },
 };
@@ -105,8 +95,7 @@ const pipe = {
   gap: 85,
   moved: true,
   pipes: [],
-
-  spawnTimer: 0, // таймер спауна труб
+  spawnTimer: 0, // таймер спауна
 
   draw() {
     for (let p of this.pipes) {
@@ -121,22 +110,22 @@ const pipe = {
 
   update(dtSec) {
     if (state.curr !== state.Play) return;
-
-    // Раз в ~2 секунды создаём новую трубу
+    // Каждые ~2c
     this.spawnTimer += dtSec;
     if (this.spawnTimer > 2) {
       this.spawnTimer = 0;
+      // спавним новую трубу
       this.pipes.push({
-        x: scrn.width,
+        x: scrn.width, // 400
         y: -210 * Math.min(Math.random() + 1, 1.8),
       });
     }
 
     for (let p of this.pipes) {
-      p.x -= dx * dtSec;
+      p.x -= dx * dtSec; 
     }
 
-    // Убираем трубы, которые ушли за экран
+    // Убираем ушедшие за левый край
     if (this.pipes.length && this.pipes[0].x < -this.top.sprite.width) {
       this.pipes.shift();
       this.moved = true;
@@ -156,37 +145,36 @@ const bird = {
   x: 50,
   y: 100,
   speed: 0,
-  gravity: 300,   // px/s^2
-  thrust: 250,    // px/s
+  gravity: 300,   
+  thrust: 250,    
   frame: 0,
 
   animTimer: 0,
-  animInterval: 0.1, // переключение кадров
+  animInterval: 0.1,
   bobTimer: 0,
   bobAmplitude: 5,
   bobSpeed: 2,
 
   draw() {
-    let sprite = this.animations[this.frame].sprite;
-    let w = sprite.width;
-    let h = sprite.height;
+    let spr = this.animations[this.frame].sprite;
+    let w = spr.width;
+    let h = spr.height;
 
     sctx.save();
     sctx.translate(this.x, this.y);
     sctx.rotate(this.rotation * RAD);
-    sctx.drawImage(sprite, -w / 2, -h / 2);
+    sctx.drawImage(spr, -w / 2, -h / 2);
     sctx.restore();
   },
 
   update(dtSec) {
-    let r = this.animations[0].sprite.width / 2;
+    let r = this.animations[0].sprite.width / 2; // центр птицы
 
     switch (state.curr) {
       case state.getReady:
-        // Птичка покачивается
+        // Покачивание
         this.bobTimer += dtSec;
         this.y = 100 + this.bobAmplitude * Math.sin(2 * Math.PI * this.bobSpeed * this.bobTimer);
-
         // Кадры
         this.animTimer += dtSec;
         if (this.animTimer > this.animInterval) {
@@ -197,26 +185,26 @@ const bird = {
         break;
 
       case state.Play:
-        // Кадры (быстрее)
+        // Кадры
         this.animTimer += dtSec;
         if (this.animTimer > 0.07) {
           this.animTimer = 0;
           this.frame = (this.frame + 1) % this.animations.length;
         }
-
-        // Движение и гравитация
+        // Движение + гравитация
         this.y += this.speed * dtSec;
         this.speed += this.gravity * dtSec;
 
-        // Угол
+        // Поворот
         this.setRotation();
 
         // Столкновение с землёй
-        if (this.y + r >= gnd.y) {
+        let groundY = scrn.height - gnd.sprite.height; // 600 - ground
+        if (this.y + r >= groundY) {
           state.curr = state.gameOver;
           SFX.hit.play();
         }
-        // Столкновение с трубами
+        // Трубы
         if (this.collisioned()) {
           state.curr = state.gameOver;
           SFX.hit.play();
@@ -224,16 +212,15 @@ const bird = {
         break;
 
       case state.gameOver:
-        this.frame = 1; // замерли крылья
-        if (this.y + r < gnd.y) {
-          // падаем
+        this.frame = 1;
+        let gY = scrn.height - gnd.sprite.height;
+        if (this.y + r < gY) {
           this.y += this.speed * dtSec;
           this.speed += (this.gravity * 2) * dtSec;
           this.setRotation();
         } else {
-          // легли на землю
           this.speed = 0;
-          this.y = gnd.y - r;
+          this.y = gY - r;
           this.rotation = 90;
           if (!SFX.played) {
             SFX.die.play();
@@ -261,10 +248,10 @@ const bird = {
 
   collisioned() {
     if (!pipe.pipes.length) return false;
-    let birdSprite = this.animations[0].sprite;
-    let r = birdSprite.height / 4 + birdSprite.width / 4;
+    let spr = this.animations[0].sprite;
+    let r = spr.height / 4 + spr.width / 4;
 
-    let p = pipe.pipes[0]; 
+    let p = pipe.pipes[0];
     let x = p.x;
     let y = p.y;
     let roof = y + pipe.top.sprite.height;
@@ -274,12 +261,10 @@ const bird = {
     // Столкновение
     if (this.x + r >= x) {
       if (this.x + r < x + w) {
-        // В пределах по X
         if (this.y - r <= roof || this.y + r >= floor) {
           return true;
         }
       } else if (pipe.moved) {
-        // Пролетели трубу – увеличиваем счёт
         UI.score.curr++;
         SFX.score.play();
         pipe.moved = false;
@@ -301,48 +286,39 @@ const UI = {
     curr: 0,
     best: 0,
   },
-
-  x: 0,
-  y: 0,
-  tx: 0,
-  ty: 0,
   frame: 0,
   animTimer: 0,
 
   draw() {
     switch (state.curr) {
       case state.getReady:
-        // getReady
-        this.y = (scrn.height - this.getReady.sprite.height) / 2;
-        this.x = (scrn.width - this.getReady.sprite.width) / 2;
-        sctx.drawImage(this.getReady.sprite, this.x, this.y);
+        let gy = (scrn.height - this.getReady.sprite.height) / 2;
+        let gx = (scrn.width - this.getReady.sprite.width) / 2;
+        sctx.drawImage(this.getReady.sprite, gx, gy);
 
-        // tap
         let tapImg = this.tap[this.frame].sprite;
-        this.tx = (scrn.width - tapImg.width) / 2;
-        this.ty = this.y + this.getReady.sprite.height - tapImg.height;
-        sctx.drawImage(tapImg, this.tx, this.ty);
+        let tx = (scrn.width - tapImg.width) / 2;
+        let ty = gy + this.getReady.sprite.height - tapImg.height;
+        sctx.drawImage(tapImg, tx, ty);
         break;
 
       case state.gameOver:
-        // gameOver
-        this.y = (scrn.height - this.gameOver.sprite.height) / 2;
-        this.x = (scrn.width - this.gameOver.sprite.width) / 2;
-        sctx.drawImage(this.gameOver.sprite, this.x, this.y);
+        let goy = (scrn.height - this.gameOver.sprite.height) / 2;
+        let gox = (scrn.width - this.gameOver.sprite.width) / 2;
+        sctx.drawImage(this.gameOver.sprite, gox, goy);
 
-        // tap (по аналогии)
         let tapImg2 = this.tap[this.frame].sprite;
-        this.tx = (scrn.width - tapImg2.width) / 2;
-        this.ty = this.y + this.gameOver.sprite.height - tapImg2.height;
-        sctx.drawImage(tapImg2, this.tx, this.ty);
+        let tx2 = (scrn.width - tapImg2.width) / 2;
+        let ty2 = goy + this.gameOver.sprite.height - tapImg2.height;
+        sctx.drawImage(tapImg2, tx2, ty2);
         break;
     }
     this.drawScore();
   },
 
   drawScore() {
-    sctx.fillStyle = "#FFFFFF";
-    sctx.strokeStyle = "#000000";
+    sctx.fillStyle = "#fff";
+    sctx.strokeStyle = "#000";
     sctx.lineWidth = 2;
     sctx.font = "35px Arial";
 
@@ -365,8 +341,8 @@ const UI = {
           sctx.strokeText(sc, scrn.width / 2 - 80, scrn.height / 2 + 0);
           sctx.fillText(bs, scrn.width / 2 - 80, scrn.height / 2 + 30);
           sctx.strokeText(bs, scrn.width / 2 - 80, scrn.height / 2 + 30);
-        } catch (e) {
-          // Если localStorage не работает
+        } catch(e) {
+          // Если localStorage не доступен
           sctx.fillText(sc, scrn.width / 2 - 85, scrn.height / 2 + 15);
           sctx.strokeText(sc, scrn.width / 2 - 85, scrn.height / 2 + 15);
         }
@@ -376,7 +352,7 @@ const UI = {
 
   update(dtSec) {
     if (state.curr === state.Play) return;
-    // Анимация tap
+    // Анимация "тап"
     this.animTimer += dtSec;
     if (this.animTimer > 0.15) {
       this.animTimer = 0;
@@ -385,9 +361,9 @@ const UI = {
   },
 };
 
-// Подгружаем спрайты (укажите пути, совпадающие с вашей структурой)
+// Загружаем спрайты (пример)
 bg.sprite.src = "img/BG.png";
-gnd.sprite.src = "img/ground/g0.png"; // например, если г0.png – ваше «ground»
+gnd.sprite.src = "img/ground/g0.png";
 pipe.top.sprite.src = "img/toppipe.png";
 pipe.bot.sprite.src = "img/botpipe.png";
 
@@ -401,15 +377,13 @@ bird.animations[1].sprite.src = "img/bird/b1.png";
 bird.animations[2].sprite.src = "img/bird/b2.png";
 bird.animations[3].sprite.src = "img/bird/b0.png";
 
-
-/** Запуск rAF цикла **/
+/** Основной цикл через rAF **/
 function gameLoop(timestamp) {
   if (!gameRunning) {
-    // первый запуск
     lastTimestamp = timestamp;
     gameRunning = true;
   }
-  let dtMs = timestamp - lastTimestamp;
+  const dtMs = timestamp - lastTimestamp;
   lastTimestamp = timestamp;
 
   const dtSec = dtMs / 1000;
@@ -429,6 +403,7 @@ function update(dtSec) {
 }
 
 function draw() {
+  // Фон неба
   sctx.fillStyle = "#30c0df";
   sctx.fillRect(0, 0, scrn.width, scrn.height);
 
@@ -439,7 +414,7 @@ function draw() {
   UI.draw();
 }
 
-/** Управление состояниями **/
+/** Обработка состояния **/
 function onUserAction() {
   switch (state.curr) {
     case state.getReady:
@@ -460,15 +435,11 @@ function onUserAction() {
   }
 }
 
-/** Обработчики кликов и клавиатуры **/
-// Клик по canvas
+/** Клики и клавиатура **/
 scrn.addEventListener("click", () => {
   onUserAction();
 });
-
-// Клавиатура – используем document, чтобы не требовать фокус на canvas
-document.addEventListener("keydown", function(e) {
-  // Space(32), W(87), Arrow Up(38)
+document.addEventListener("keydown", (e) => {
   if (e.keyCode === 32 || e.keyCode === 87 || e.keyCode === 38) {
     onUserAction();
   }
