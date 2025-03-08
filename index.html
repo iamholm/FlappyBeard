@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Flappy Bird – Универсальный</title>
+  <title>Flappy Beard</title>
   <style>
     html, body {
       margin: 0;
@@ -14,13 +14,15 @@
       background: #222;
       font-family: Arial, sans-serif;
       height: 100%;
-      /* Отключаем жесты и выделение во всём документе */
+
+      /* Отключаем стандартные жесты и выделение на мобильных */
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
       -webkit-touch-callout: none;
-      overscroll-behavior: contain; /* Чтобы не было "проскальзывания" на Android */
+      overscroll-behavior: contain; 
     }
+
     #startScreen, #gameOverScreen {
       position: absolute;
       top: 0;
@@ -32,19 +34,24 @@
       align-items: center;
       justify-content: center;
       background: rgba(0, 0, 0, 0.7);
-      z-index: 9999; /* Поверх всего */
+      z-index: 9999; /* Чтобы точно было поверх canvas */
     }
+
     button {
       padding: 10px 20px;
       font-size: 18px;
       cursor: pointer;
       margin-top: 20px;
     }
+
     canvas {
       display: block;
       background: #70c5ce;
-      width: 100%;  /* Растянем по ширине, высота установится скриптом */
-      height: 100%;
+
+      /* Также отключаем жесты для canvas */
+      touch-action: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
   </style>
 </head>
@@ -70,26 +77,31 @@
     const startScreen = document.getElementById("startScreen");
     const gameOverScreen = document.getElementById("gameOverScreen");
     const finalScoreElem = document.getElementById("finalScore");
+
+    // Звуки
     const flapSound = document.getElementById("flapSound");
     const scoreSound = document.getElementById("scoreSound");
     const hitSound = document.getElementById("hitSound");
 
-    // Масштабирование canvas, учитывая devicePixelRatio (ретина/hi-dpi)
+    // Размеры холста с учётом devicePixelRatio, чтобы картинка была чёткой
     function resizeCanvas() {
       const dpr = window.devicePixelRatio || 1;
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      canvas.style.width = width + "px";
-      canvas.style.height = height + "px";
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = w + "px";
+      canvas.style.height = h + "px";
+
+      // Масштабируем контекст для чёткой отрисовки
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
     }
     window.addEventListener("resize", resizeCanvas);
     resizeCanvas();
 
-    // Изображения труб и птицы
+    // Подгружаем изображения
     const birdImage = new Image();
     birdImage.src = "bird.png";
     const pipeBodyImage = new Image();
@@ -97,20 +109,26 @@
     const pipeCapImage = new Image();
     pipeCapImage.src = "pipeCap.png";
 
-    // Глобальные переменные игры
+    // Переменные игры
     let bird, pipes, score, gameOver, speed, groundX;
-    let gameStarted = false;
-    const gravity = 0.5;
-    const birdSize = 50;
-    const pipeWidth = 50;
-    const pipeGapMin = 120;
-    const pipeGapMax = 200;
-    const initialPipeDistance = 200;
-    const minPipeDistance = 120;
-    const pipeDistanceFactor = 2;
-    const groundHeight = 30;
-    const capHeight = 20; // высота кончика трубы
+    let gameStarted = false; // флаг – идёт ли игра
 
+    // Параметры физики и объектов
+    const gravity = 0.5;         // Сила гравитации (будет умножаться на dt)
+    const birdSize = 50;         // Размер птицы
+    const pipeWidth = 50;        
+    const pipeGapMin = 120;      
+    const pipeGapMax = 200;      
+    const initialPipeDistance = 200; 
+    const minPipeDistance = 120; 
+    const pipeDistanceFactor = 2; 
+    const groundHeight = 30;     
+    const capHeight = 20;        // высота кончика трубы
+
+    // Для расчёта delta time
+    let lastTimestamp = 0;       // последнее время (ms) вызова gameLoop
+
+    // Функция для получения текущего расстояния между трубами (уменьшается с ростом счёта)
     function getCurrentPipeDistance() {
       return Math.max(minPipeDistance, initialPipeDistance - score * pipeDistanceFactor);
     }
@@ -122,14 +140,16 @@
       gameOver = false;
       speed = 2;
       groundX = 0;
+      lastTimestamp = 0;  // сбрасываем таймер
     }
 
+    // Создание трубы
     function spawnPipe() {
       const gap = Math.floor(Math.random() * (pipeGapMax - pipeGapMin + 1)) + pipeGapMin;
       const screenHeight = window.innerHeight;
       const maxPipeHeight = screenHeight - gap - groundHeight - 50;
       const topHeight = Math.floor(Math.random() * (maxPipeHeight - 50 + 1)) + 50;
-      pipes.push({ 
+      pipes.push({
         x: window.innerWidth,
         topHeight: topHeight,
         gap: gap,
@@ -137,24 +157,41 @@
       });
     }
 
-    function update() {
+    // Обновление логики игры
+    // dtMs – время, прошедшее между кадрами в миллисекундах
+    function update(dtMs) {
       if (gameOver) return;
-      bird.velocity += gravity;
-      bird.y += bird.velocity;
 
+      // Преобразуем в секунды; 
+      // При этом умножаем на 60, чтобы игра шла с той же скоростью, что и на 60fps (условно).
+      const dt = (dtMs / 1000) * 60;
+
+      // Обновляем птицу
+      bird.velocity += gravity * dt;
+      bird.y += bird.velocity * dt;
+
+      // Проверяем вылет за верх/низ
       if (bird.y + birdSize > window.innerHeight - groundHeight || bird.y < 0) {
         endGame();
       }
 
+      // Трубы
       for (let pipe of pipes) {
-        pipe.x -= speed;
+        // Двигаем трубу влево
+        pipe.x -= speed * dt;
+
+        // Начисляем очки
         if (!pipe.passed && pipe.x + pipeWidth < bird.x) {
           score++;
           pipe.passed = true;
           if (scoreSound.play) scoreSound.play();
-          // каждые 5 очков усложняем
-          if (score % 5 === 0) speed += 0.5;
+          // Каждые 5 очков чуть ускоряемся
+          if (score % 5 === 0) {
+            speed += 0.5;
+          }
         }
+
+        // Столкновение с трубой
         if (
           bird.x + birdSize > pipe.x &&
           bird.x < pipe.x + pipeWidth &&
@@ -164,22 +201,27 @@
         }
       }
 
+      // Убираем старые трубы
       if (pipes.length && pipes[0].x + pipeWidth < 0) {
         pipes.shift();
       }
 
+      // Спавним новые
       const currentPipeDistance = getCurrentPipeDistance();
-      if (pipes.length === 0 || window.innerWidth - pipes[pipes.length - 1].x >= currentPipeDistance) {
+      if (pipes.length === 0 || (window.innerWidth - pipes[pipes.length - 1].x) >= currentPipeDistance) {
         spawnPipe();
       }
 
-      groundX = (groundX - speed) % window.innerWidth;
+      // Двигаем землю (низ экрана)
+      groundX = (groundX - speed * dt) % window.innerWidth;
     }
 
+    // Отрисовка кадра
     function draw() {
       const screenWidth = window.innerWidth;
       const screenHeight = window.innerHeight;
-      // Фон
+
+      // Небесный градиент
       const gradient = ctx.createLinearGradient(0, 0, 0, screenHeight);
       gradient.addColorStop(0, "#70c5ce");
       gradient.addColorStop(1, "#fff");
@@ -192,7 +234,9 @@
         ctx.save();
         ctx.translate(pipe.x, pipe.topHeight);
         ctx.scale(1, -1);
+        // Кончик
         ctx.drawImage(pipeCapImage, 0, 0, pipeWidth, capHeight);
+        // Тело
         ctx.drawImage(pipeBodyImage, 0, capHeight, pipeWidth, pipe.topHeight - capHeight);
         ctx.restore();
 
@@ -200,7 +244,13 @@
         ctx.save();
         ctx.translate(pipe.x, pipe.topHeight + pipe.gap);
         ctx.drawImage(pipeCapImage, 0, 0, pipeWidth, capHeight);
-        ctx.drawImage(pipeBodyImage, 0, capHeight, pipeWidth, screenHeight - (pipe.topHeight + pipe.gap) - groundHeight - capHeight);
+        ctx.drawImage(
+          pipeBodyImage,
+          0,
+          capHeight,
+          pipeWidth,
+          screenHeight - (pipe.topHeight + pipe.gap) - groundHeight - capHeight
+        );
         ctx.restore();
       }
 
@@ -212,21 +262,34 @@
       ctx.font = "20px Arial";
       ctx.fillText(`Счёт: ${score}`, 10, 25);
 
-      // Земля
+      // Земля (движущаяся полоска)
       ctx.fillStyle = "#964B00";
       ctx.fillRect(groundX, screenHeight - groundHeight, screenWidth, groundHeight);
       ctx.fillRect(groundX + screenWidth, screenHeight - groundHeight, screenWidth, groundHeight);
     }
 
-    function gameLoop() {
-      if (!gameStarted) return;
-      update();
-      draw();
-      if (!gameOver) {
+    // Главный цикл с учётом времени
+    function gameLoop(timestamp) {
+      if (!gameStarted) {
+        // Если игра не началась – просто ждём
         requestAnimationFrame(gameLoop);
+        return;
       }
-    }
 
+      let dtMs = timestamp - lastTimestamp;
+      if (!lastTimestamp) dtMs = 0; // первый кадр
+      lastTimestamp = timestamp;
+
+      if (!gameOver) {
+        update(dtMs);
+        draw();
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+    requestAnimationFrame(gameLoop);
+
+    // Завершение игры
     function endGame() {
       gameOver = true;
       if (hitSound.play) hitSound.play();
@@ -234,30 +297,31 @@
       gameOverScreen.style.display = "flex";
     }
 
+    // Старт
     function startGame() {
       startScreen.style.display = "none";
       gameOverScreen.style.display = "none";
       gameStarted = true;
       initGame();
-      gameLoop();
     }
 
+    // Перезапуск
     function restartGame() {
       initGame();
       gameOverScreen.style.display = "none";
-      gameLoop();
     }
 
-    // "Взмах"
+    // «Взмах» – обработчик касания/клика/нажатия
     function flap(e) {
-      if (e && e.preventDefault) {
-        e.preventDefault();
-        e.stopPropagation();
+      if (e) {
+        e.preventDefault?.();
+        e.stopPropagation?.();
       }
       if (!gameStarted) {
         startGame();
       }
       if (!gameOver) {
+        // Подбрасываем птицу
         bird.velocity = -7;
         if (flapSound.play) {
           flapSound.currentTime = 0;
@@ -267,35 +331,39 @@
     }
 
     /*
-      Навешиваем все возможные события на:
-      - документ, чтобы перехватывать в любом месте (в WebView Telegram иногда canvas не "виден")
-      - canvas, если вдруг документ перехватывает не всё
-      - startScreen, чтобы сразу начинать игру
+      Навешиваем все возможные события (touchstart, touchend, pointerdown, pointerup, click)
+      на:
+      - document, 
+      - canvas,
+      - startScreen
+
+      Так мы перекрываем максимум случаев.
     */
 
-    // DOCUMENT – для Android/Telegram, где canvas может быть "прозрачным"
-    document.addEventListener("touchstart", flap, { passive: false });
-    document.addEventListener("touchend", flap, { passive: false });
-    document.addEventListener("click", flap, { passive: false });
-    document.addEventListener("pointerdown", flap, { passive: false });
-    document.addEventListener("pointerup", flap, { passive: false });
+    // Список типов событий, которые нужно отловить
+    const eventTypes = [
+      "touchstart", "touchend",
+      "pointerdown", "pointerup",
+      "click"
+    ];
 
-    // START SCREEN
-    startScreen.addEventListener("touchstart", flap, { passive: false });
-    startScreen.addEventListener("touchend", flap, { passive: false });
-    startScreen.addEventListener("click", flap, { passive: false });
-    startScreen.addEventListener("pointerdown", flap, { passive: false });
-    startScreen.addEventListener("pointerup", flap, { passive: false });
+    // Функция, вешает flap на целевой элемент под все события
+    function bindAllEvents(target) {
+      eventTypes.forEach(evName => {
+        target.addEventListener(evName, flap, { passive: false });
+      });
+    }
 
-    // CANVAS
-    canvas.addEventListener("touchstart", flap, { passive: false });
-    canvas.addEventListener("touchend", flap, { passive: false });
-    canvas.addEventListener("click", flap, { passive: false });
-    canvas.addEventListener("pointerdown", flap, { passive: false });
-    canvas.addEventListener("pointerup", flap, { passive: false });
+    // Вешаем на document, стартовый экран и canvas
+    bindAllEvents(document);
+    bindAllEvents(startScreen);
+    bindAllEvents(canvas);
 
-    // Клавиатура
-    document.addEventListener("keydown", flap);
+    // Также поддерживаем клавиатуру (десктоп)
+    document.addEventListener("keydown", (e) => {
+      // Только если не системная клавиша
+      if (!e.repeat) flap(e);
+    });
   </script>
 </body>
 </html>
