@@ -2,10 +2,11 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <!-- Мета-теги для мобильных устройств -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black" />
-  <title>Flappy Bird – Разделённые трубы</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Flappy Bird – Универсальный</title>
   <style>
     html, body {
       margin: 0;
@@ -28,15 +29,15 @@
       background: rgba(0, 0, 0, 0.7);
       z-index: 2;
     }
-    canvas {
-      display: block;
-      background: #70c5ce;
-    }
     button {
       padding: 10px 20px;
       font-size: 18px;
       cursor: pointer;
       margin-top: 20px;
+    }
+    canvas {
+      display: block;
+      background: #70c5ce;
     }
   </style>
 </head>
@@ -66,22 +67,28 @@
     const scoreSound = document.getElementById("scoreSound");
     const hitSound = document.getElementById("hitSound");
 
-    // Адаптивный canvas на весь экран
+    // Функция для масштабирования canvas с учетом devicePixelRatio
     function resizeCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      const dpr = window.devicePixelRatio || 1;
+      const rectWidth = window.innerWidth;
+      const rectHeight = window.innerHeight;
+      canvas.width = rectWidth * dpr;
+      canvas.height = rectHeight * dpr;
+      canvas.style.width = rectWidth + "px";
+      canvas.style.height = rectHeight + "px";
+      // Сброс трансформации и установка масштаба для корректной отрисовки
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
     }
     window.addEventListener("resize", resizeCanvas);
     resizeCanvas();
 
-    // Загрузка изображений:
-    // Файл для птицы
+    // Загрузка изображений.
+    // Файлы bird.png, pipeBody.png и pipeCap.png должны лежать в одной папке с index.html.
     const birdImage = new Image();
     birdImage.src = "bird.png";
-    // Основная часть трубы
     const pipeBodyImage = new Image();
     pipeBodyImage.src = "pipeBody.png";
-    // Кончик трубы (колпачок)
     const pipeCapImage = new Image();
     pipeCapImage.src = "pipeCap.png";
 
@@ -97,7 +104,7 @@
     const minPipeDistance = 120;
     const pipeDistanceFactor = 2;
     const groundHeight = 30;
-    const capHeight = 20; // Фиксированная высота "кончика" трубы
+    const capHeight = 20; // Фиксированая высота кончика трубы
 
     function getCurrentPipeDistance() {
       return Math.max(minPipeDistance, initialPipeDistance - score * pipeDistanceFactor);
@@ -114,11 +121,14 @@
 
     function spawnPipe() {
       const gap = Math.floor(Math.random() * (pipeGapMax - pipeGapMin + 1)) + pipeGapMin;
-      const maxPipeHeight = canvas.height - gap - groundHeight - 50;
+      // Высота для верхней трубы вычисляется на основе доступной высоты экрана (учитываем, что canvas масштабирован)
+      const screenHeight = window.innerHeight;
+      const maxPipeHeight = screenHeight - gap - groundHeight - 50;
       const topHeight = Math.floor(Math.random() * (maxPipeHeight - 50 + 1)) + 50;
+      // x указываем в координатах логического пространства (не умноженных на dpr)
       pipes.push({ 
-        x: canvas.width, 
-        topHeight: topHeight, 
+        x: window.innerWidth,
+        topHeight: topHeight,
         gap: gap,
         passed: false
       });
@@ -129,7 +139,7 @@
       bird.velocity += gravity;
       bird.y += bird.velocity;
 
-      if (bird.y + birdSize > canvas.height - groundHeight || bird.y < 0) {
+      if (bird.y + birdSize > window.innerHeight - groundHeight || bird.y < 0) {
         endGame();
       }
 
@@ -155,46 +165,48 @@
       }
 
       const currentPipeDistance = getCurrentPipeDistance();
-      if (pipes.length === 0 || canvas.width - pipes[pipes.length - 1].x >= currentPipeDistance) {
+      if (pipes.length === 0 || window.innerWidth - pipes[pipes.length - 1].x >= currentPipeDistance) {
         spawnPipe();
       }
 
-      groundX = (groundX - speed) % canvas.width;
+      groundX = (groundX - speed) % window.innerWidth;
     }
 
     function draw() {
+      const screenWidth = window.innerWidth;
+      const screenHeight = window.innerHeight;
       // Фон с градиентом
-      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      let gradient = ctx.createLinearGradient(0, 0, 0, screenHeight);
       gradient.addColorStop(0, "#70c5ce");
       gradient.addColorStop(1, "#fff");
       ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, screenWidth, screenHeight);
 
-      // Рисуем трубы, используя две картинки для каждой
-      pipes.forEach(pipe => {
-        // Верхняя труба (перевёрнутая)
+      // Рисуем трубы. Для каждой трубы рисуем две части:
+      // Верхняя труба (перевернутая)
+      for (let pipe of pipes) {
         ctx.save();
-        // Переводим систему координат так, чтобы нижняя граница верхней трубы была в точке (pipe.x, pipe.topHeight)
+        // Для верхней трубы: перемещаем систему координат так, чтобы нижняя граница трубы была в (pipe.x, pipe.topHeight)
         ctx.translate(pipe.x, pipe.topHeight);
-        ctx.scale(1, -1); // отражаем по вертикали
-        // Рисуем кончик трубы (фиксированная высота)
+        ctx.scale(1, -1);
+        // Рисуем кончик трубы (фиксированный capHeight)
         ctx.drawImage(pipeCapImage, 0, 0, pipeWidth, capHeight);
-        // Рисуем тело трубы, растянутое на оставшуюся высоту
+        // Рисуем тело трубы: растягиваем между кончиком и нижней границей трубы
         ctx.drawImage(pipeBodyImage, 0, capHeight, pipeWidth, pipe.topHeight - capHeight);
         ctx.restore();
 
-        // Нижняя труба (обычная ориентация)
+        // Нижняя труба
         ctx.save();
         // Перемещаемся в начало нижней трубы
         ctx.translate(pipe.x, pipe.topHeight + pipe.gap);
-        // Рисуем кончик трубы в верхней части
+        // Рисуем кончик трубы сверху
         ctx.drawImage(pipeCapImage, 0, 0, pipeWidth, capHeight);
-        // Рисуем тело трубы под кончиком
-        ctx.drawImage(pipeBodyImage, 0, capHeight, pipeWidth, canvas.height - (pipe.topHeight + pipe.gap) - groundHeight - capHeight);
+        // Рисуем тело трубы: растягиваем от кончика до земли (с учетом groundHeight)
+        ctx.drawImage(pipeBodyImage, 0, capHeight, pipeWidth, screenHeight - (pipe.topHeight + pipe.gap) - groundHeight - capHeight);
         ctx.restore();
-      });
+      }
 
-      // Птица
+      // Рисуем птицу
       ctx.drawImage(birdImage, bird.x, bird.y, birdSize, birdSize);
 
       // Счёт
@@ -204,8 +216,8 @@
 
       // Земля
       ctx.fillStyle = "#964B00";
-      ctx.fillRect(groundX, canvas.height - groundHeight, canvas.width, groundHeight);
-      ctx.fillRect(groundX + canvas.width, canvas.height - groundHeight, canvas.width, groundHeight);
+      ctx.fillRect(groundX, screenHeight - groundHeight, screenWidth, groundHeight);
+      ctx.fillRect(groundX + screenWidth, screenHeight - groundHeight, screenWidth, groundHeight);
     }
 
     function gameLoop() {
@@ -238,7 +250,11 @@
       gameLoop();
     }
 
-    function flap() {
+    // Функция для обработки "взмаха" (клика/касания)
+    function flap(e) {
+      if(e && e.preventDefault) {
+        e.preventDefault();
+      }
       if (!gameStarted) {
         startGame();
       }
@@ -251,11 +267,13 @@
       }
     }
 
+    // Обработчики событий для клавиатуры, клика и касания
     document.addEventListener("keydown", flap);
     canvas.addEventListener("click", flap);
     canvas.addEventListener("touchend", function(e) {
-      flap();
+      e.preventDefault();
+      flap(e);
     });
-  </script>
+    </script>
 </body>
 </html>
